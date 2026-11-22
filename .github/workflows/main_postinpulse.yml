@@ -24,32 +24,54 @@ jobs:
           node-version: '24.x'
 
       - name: npm install, build, and test
+        working-directory: ./postinpulse
         run: |
           npm install
           npm run build --if-present
           npm run test --if-present
 
+      - name: Remove secret files from the deployment package
+        working-directory: ./postinpulse
+        run: |
+          rm -f .env .env.local .env.development .env.test .env.production \
+            .env.development.local .env.test.local .env.production.local
+          test -f package.json
+          test -d .next
+          if find . -type f \( \
+              -name '.env' -o -name '.env.local' -o -name '.env.development' -o \
+              -name '.env.test' -o -name '.env.production' -o -name '.env.development.local' -o \
+              -name '.env.test.local' -o -name '.env.production.local' \
+            \) | grep -q .; then
+            echo "Secret env files are still in the application folder."
+            exit 1
+          fi
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          # The application folder is the artifact root, so package.json and .next
+          # are at the top of the package. Hidden folders such as .next are included.
+          path: ./postinpulse
+          include-hidden-files: true
+          if-no-files-found: error
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    
+
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+          path: postinpulse
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'postinpulse'
           slot-name: 'Production'
-          package: .
+          package: ./postinpulse
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_45EB91FFC1744B0580843FD7972BED3D }}
